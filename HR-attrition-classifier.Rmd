@@ -78,7 +78,7 @@ glm <- logistic_reg(mode = "classification") %>%
 ## Random forest model
 
 ```{r}
-rf <- rand_forest(mode = "classification") %>%
+rf <- rand_forest(mode = "classification", mtry = tune(), trees = tune()) %>%
   set_engine("ranger")
 ```
 
@@ -87,7 +87,7 @@ rf <- rand_forest(mode = "classification") %>%
 ## Metric sets and folds
 
 ```{r}
-class_metrics <- metric_set(accuracy, precision, recall)
+#class_metrics <- metric_set(accuracy, precision, recall)
 ```
 
 Defining the number of folds for the cross validation to 4 and keeping repeats at 1 to minimize the time to train each model.
@@ -109,32 +109,32 @@ glm_wf %>%
   bind_cols(training(ibm_split)) %>%
   conf_mat(truth = Attrition, estimate = .pred_class)
 
-accuracy <- glm_wf %>%
+glm_accuracy <- glm_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   accuracy(estimate = .pred_class, truth = Attrition)
 
-sensitivity <- glm_wf %>%
+glm_sensitivity <- glm_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   sensitivity(estimate = .pred_class, truth = Attrition)
 
-specificity <- glm_wf %>%
+glm_specificity <- glm_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   specificity(estimate = .pred_class, truth = Attrition)
 
-precision <- glm_wf %>%
+glm_precision <- glm_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   precision(estimate = .pred_class, truth = Attrition)
 
-recall <- glm_wf %>%
+glm_recall <- glm_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   precision(estimate = .pred_class, truth = Attrition)
 
-f_score <- glm_wf %>%
+glm_f_score <- glm_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   f_meas(estimate = .pred_class, truth = Attrition)
@@ -142,52 +142,88 @@ f_score <- glm_wf %>%
 # F1 Score = 2*(Recall * Precision) / (Recall + Precision)
 ```
 
-- Accuracy = `r round(accuracy$.estimate[1],3)` 
-- sensitivity = `r round(sensitivity$.estimate[1],3)` 
-- specificity = `r round(specificity$.estimate[1],3)`
-- precision = `r round(precision$.estimate[1],3)`
-- recall = `r round(recall$.estimate[1],3)`
-- F score = `r round(f_score$.estimate[1],3)`
+- Accuracy = `r round(glm_accuracy$.estimate[1],3)` 
+- sensitivity = `r round(glm_sensitivity$.estimate[1],3)` 
+- specificity = `r round(glm_specificity$.estimate[1],3)`
+- precision = `r round(glm_precision$.estimate[1],3)`
+- recall = `r round(glm_recall$.estimate[1],3)`
+- F score = `r round(glm_f_score$.estimate[1],3)`
 
 ## Cross validation random forest model
 
+Creating the workflow using the recipe and the random forest model with the ranger engine.
+
 ```{r}
-rf_wf <- workflow() %>%
+wf_rf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(rf)
+```
+
+Setting the grid for hyper parameter tuning for the *mtry* and number of *trees*.
+
+```{r}
+rf_grid <- expand.grid(mtry = c(1, 3, 5, 7, 10), trees = c(5, 10, 15, 30, 50, 75, 100, 200, 300, 400, 500))
+```
+
+Cross validating and hyper parameter tuning the randomforest model.
+
+```{r}
+rf_tune <- tune_grid(object = rf, 
+                     preprocessor = my_recipe, 
+                     resamples = folds, 
+                     grid = rf_grid, 
+                     metrics = metric_set(accuracy, sensitivity, specificity, f_meas))
+
+rf_result <- show_best(rf_tune, metric = "accuracy")
+
+rf_result
+
+####################################
+### Fitting the entire train set ###
+####################################
+
+rf <- rand_forest(mode = "classification", mtry = 10, trees = 400) %>%
+  set_engine("ranger")
+
+final_wf <- workflow() %>%
   add_recipe(my_recipe) %>%
   add_model(rf) %>%
   fit(training(ibm_split))
+```
 
-rf_wf %>%
+
+```{r}
+final_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   conf_mat(truth = Attrition, estimate = .pred_class)
 
-accuracy <- rf_wf %>%
+rf_accuracy <- final_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   accuracy(estimate = .pred_class, truth = Attrition)
 
-sensitivity <- rf_wf %>%
+rf_sensitivity <- final_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   sensitivity(estimate = .pred_class, truth = Attrition)
 
-specificity <- rf_wf %>%
+rf_specificity <- final_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   specificity(estimate = .pred_class, truth = Attrition)
 
-precision <- rf_wf %>%
+rf_precision <- final_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   precision(estimate = .pred_class, truth = Attrition)
 
-recall <- rf_wf %>%
+rf_recall <- final_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   precision(estimate = .pred_class, truth = Attrition)
 
-f_score <- rf_wf %>%
+rf_f_score <- final_wf %>%
   predict(training(ibm_split)) %>%
   bind_cols(training(ibm_split)) %>%
   f_meas(estimate = .pred_class, truth = Attrition)
@@ -195,9 +231,104 @@ f_score <- rf_wf %>%
 # F1 Score = 2*(Recall * Precision) / (Recall + Precision)
 ```
 
-- Accuracy = `r round(accuracy$.estimate[1],3)` 
-- sensitivity = `r round(sensitivity$.estimate[1],3)` 
-- specificity = `r round(specificity$.estimate[1],3)`
-- precision = `r round(precision$.estimate[1],3)`
-- recall = `r round(recall$.estimate[1],3)`
-- F score = `r round(f_score$.estimate[1],3)`
+- Accuracy = `r round(rf_accuracy$.estimate[1],3)` 
+- sensitivity = `r round(rf_sensitivity$.estimate[1],3)` 
+- specificity = `r round(rf_specificity$.estimate[1],3)`
+- precision = `r round(rf_precision$.estimate[1],3)`
+- recall = `r round(rf_recall$.estimate[1],3)`
+- F score = `r round(rf_f_score$.estimate[1],3)`
+
+# Predicting the test set
+
+## Random forest model
+
+```{r}
+predict_testing <- final_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  conf_mat(truth = Attrition, estimate = .pred_class)
+
+rf_accuracy <- final_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  accuracy(estimate = .pred_class, truth = Attrition)
+
+rf_sensitivity <- final_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  sensitivity(estimate = .pred_class, truth = Attrition)
+
+rf_specificity <- final_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  specificity(estimate = .pred_class, truth = Attrition)
+
+rf_precision <- final_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  precision(estimate = .pred_class, truth = Attrition)
+
+rf_recall <- final_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  precision(estimate = .pred_class, truth = Attrition)
+
+rf_f_score <- final_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  f_meas(estimate = .pred_class, truth = Attrition)
+
+```
+
+- Accuracy = `r round(rf_accuracy$.estimate[1],3)` 
+- sensitivity = `r round(rf_sensitivity$.estimate[1],3)` 
+- specificity = `r round(rf_specificity$.estimate[1],3)`
+- precision = `r round(rf_precision$.estimate[1],3)`
+- recall = `r round(rf_recall$.estimate[1],3)`
+- F score = `r round(rf_f_score$.estimate[1],3)`
+
+## Logistic regression model
+
+```{r}
+predict_testing <- glm_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  conf_mat(truth = Attrition, estimate = .pred_class)
+
+glm_accuracy <- glm_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  accuracy(estimate = .pred_class, truth = Attrition)
+
+glm_sensitivity <- glm_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  sensitivity(estimate = .pred_class, truth = Attrition)
+
+glm_specificity <- glm_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  specificity(estimate = .pred_class, truth = Attrition)
+
+glm_precision <- glm_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  precision(estimate = .pred_class, truth = Attrition)
+
+glm_recall <- glm_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  precision(estimate = .pred_class, truth = Attrition)
+
+glm_f_score <- glm_wf %>%
+  predict(testing(ibm_split)) %>%
+  bind_cols(testing(ibm_split)) %>%
+  f_meas(estimate = .pred_class, truth = Attrition)
+```
+
+- Accuracy = `r round(glm_accuracy$.estimate[1],3)` 
+- sensitivity = `r round(glm_sensitivity$.estimate[1],3)` 
+- specificity = `r round(glm_specificity$.estimate[1],3)`
+- precision = `r round(glm_precision$.estimate[1],3)`
+- recall = `r round(glm_recall$.estimate[1],3)`
+- F score = `r round(glm_f_score$.estimate[1],3)`
