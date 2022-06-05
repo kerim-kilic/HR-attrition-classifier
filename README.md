@@ -1,6 +1,3 @@
-# HR-attrition-classifier
-Attrition classifier using several supervised machine learning algorithms for HR analytics
-
 # HR attrition classifier
 
 The R and R Markdown code in this respository covers several supervised machine learning algorithms to predict if an employee of a company is likely to leave (attrition). It includes logistic regression and a random forest algorithm and compares the performance of both models.
