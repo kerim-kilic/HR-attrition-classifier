@@ -1,0 +1,108 @@
+---
+title: "HR attrition classifier"
+author: "Kerim Kiliç"
+subtitle: Supervised Machined Learning
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    toc_float: true
+---
+
+# Libraries
+
+The following three libraries are used in this R markdown file.
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidymodels)
+# devtools::install_github("jmsallan/BAdatasets")
+library(BAdatasets)
+```
+
+# Dataset descriptive analytics and data split
+
+```{r}
+data("ibm_attrition")
+ibm_attrition %>% glimpse()
+```
+
+Remove the following variables: *standardHours*, *Over18*, *EmployeeCount*, *EmployeeNumber* and transform the target variable *Attrition* into a factor.
+
+```{r}
+ibm_attrition <- ibm_attrition %>% 
+  select(-StandardHours,-Over18,-EmployeeCount,-EmployeeNumber)
+
+ibm_attrition <- ibm_attrition %>%
+  mutate(Attrition = factor(Attrition, levels = c("Yes", "No")))
+```
+
+Setting the seed for reproducibility. Creating a variable with the logarithm of the target variable *price* and splitting the data into a training and test set.
+
+```{r}
+set.seed(2022)
+ibm_split <- initial_split(ibm_attrition, prop = 0.8, strata = "Attrition")
+```
+
+# Recipe
+
+```{r}
+my_recipe <- training(ibm_split) %>%
+  recipe(Attrition ~ .) %>%
+  step_string2factor(all_nominal_predictors()) %>%
+  step_corr(all_numeric_predictors()) %>%
+  step_nzv(all_predictors()) %>%
+  step_center(all_numeric_predictors()) %>%
+  step_scale(all_numeric_predictors())
+
+my_recipe
+```
+
+Glimpse into all the variables of the recipe.
+
+```{r}
+my_recipe %>% prep() %>% juice() %>% glimpse()
+```
+
+# Creating models
+
+## Logistic regression
+
+```{r}
+glm <- logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+```
+
+
+# Testing the models
+
+## Metric sets and folds
+
+```{r}
+class_metrics <- metric_set(accuracy, precision, recall)
+```
+
+Defining the number of folds for the cross validation to 4 and keeping repeats at 1 to minimize the time to train each model.
+
+```{r}
+folds <- vfold_cv(training(ibm_split), v = 4)
+```
+
+## Cross validation logistic regression model
+
+```{r}
+glm_wf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(glm) %>%
+  fit(training(ibm_split))
+
+glm_wf %>%
+  predict(training(ibm_split)) %>%
+  bind_cols(training(ibm_split)) %>%
+  conf_mat(truth = Attrition, estimate = .pred_class)
+
+# F1 Score = 2*(Recall * Precision) / (Recall + Precision)
+```
+
